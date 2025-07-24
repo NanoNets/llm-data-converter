@@ -1,9 +1,11 @@
 """GPU processor with OCR capabilities for images and PDFs."""
 
 import os
+import json
 import logging
 import tempfile
-from typing import Dict, Any, List
+import re
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from .base import BaseProcessor
@@ -13,6 +15,249 @@ from ..pipeline.ocr_service import OCRServiceFactory
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+class GPUConversionResult(ConversionResult):
+    """Enhanced ConversionResult for GPU processing with Nanonets OCR capabilities."""
+    
+    def __init__(self, content: str, metadata: Optional[Dict[str, Any]] = None, 
+                 gpu_processor: Optional['GPUProcessor'] = None, file_path: Optional[str] = None,
+                 ocr_provider: str = "nanonets"):
+        super().__init__(content, metadata)
+        self.gpu_processor = gpu_processor
+        self.file_path = file_path
+        self.ocr_provider = ocr_provider
+        
+        # Add GPU-specific metadata
+        if metadata is None:
+            self.metadata = {}
+        
+        # Ensure GPU-specific metadata is present
+        if 'processing_mode' not in self.metadata:
+            self.metadata['processing_mode'] = 'gpu'
+        if 'ocr_provider' not in self.metadata:
+            self.metadata['ocr_provider'] = ocr_provider
+        if 'gpu_processing' not in self.metadata:
+            self.metadata['gpu_processing'] = True
+    
+    def get_ocr_info(self) -> Dict[str, Any]:
+        """Get information about the OCR processing used.
+        
+        Returns:
+            Dictionary with OCR processing information
+        """
+        return {
+            'ocr_provider': self.ocr_provider,
+            'processing_mode': 'gpu',
+            'file_path': self.file_path,
+            'gpu_processor_available': self.gpu_processor is not None
+        }
+    
+    def to_markdown(self) -> str:
+        """Export as markdown with GPU processing metadata."""
+        # Add GPU processing header if not present
+        if not self.content.startswith('# GPU Processed Document'):
+            header = f"# GPU Processed Document\n\n*Processed using {self.ocr_provider} OCR on GPU*\n\n---\n\n"
+            return header + self.content
+        return self.content
+    
+    def to_html(self) -> str:
+        """Export as HTML with GPU processing styling."""
+        # Get the base HTML from parent class
+        html_content = super().to_html()
+        
+        # Add GPU processing indicator
+        gpu_indicator = f"""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 8px; margin-bottom: 2rem; text-align: center;">
+            <strong>🚀 GPU Processed</strong> - Enhanced with {self.ocr_provider} OCR
+        </div>
+        """
+        
+        # Insert the indicator after the opening body tag
+        body_start = html_content.find('<body')
+        if body_start != -1:
+            body_end = html_content.find('>', body_start) + 1
+            return html_content[:body_end] + gpu_indicator + html_content[body_end:]
+        
+        return html_content
+    
+    def to_json(self) -> Dict[str, Any]:
+        """Export as structured JSON using Nanonets model with specific prompt."""
+        print("=== GPUConversionResult.to_json() called ===")
+        print(f"gpu_processor: {self.gpu_processor}")
+        print(f"file_path: {self.file_path}")
+        print(f"file_exists: {os.path.exists(self.file_path) if self.file_path else False}")
+        
+        try:
+            # If we have a GPU processor and file path, use the model to extract JSON
+            if self.gpu_processor and self.file_path and os.path.exists(self.file_path):
+                logger.info("Using Nanonets model for JSON extraction")
+                return self._extract_json_with_model()
+            else:
+                logger.info("Using fallback JSON conversion")
+                # Fallback to base JSON conversion
+                return self._convert_to_base_json()
+        except Exception as e:
+            logger.warning(f"Failed to extract JSON with model: {e}. Using fallback conversion.")
+            return self._convert_to_base_json()
+    
+    def _extract_json_with_model(self) -> Dict[str, Any]:
+        """Extract structured JSON using Nanonets model with specific prompt."""
+        try:
+            from PIL import Image
+            from transformers import AutoTokenizer, AutoProcessor, AutoModelForImageTextToText
+            
+            # Get the model from the GPU processor's OCR service
+            ocr_service = self.gpu_processor._get_ocr_service()
+            
+            # Access the model components from the OCR service
+            if hasattr(ocr_service, 'processor') and hasattr(ocr_service, 'model') and hasattr(ocr_service, 'tokenizer'):
+                model = ocr_service.model
+                processor = ocr_service.processor
+                tokenizer = ocr_service.tokenizer
+            else:
+                # Fallback: load model directly
+                model_path = "nanonets/Nanonets-OCR-s"
+                model = AutoModelForImageTextToText.from_pretrained(
+                    model_path, 
+                    torch_dtype="auto", 
+                    device_map="auto"
+                )
+                model.eval()
+                processor = AutoProcessor.from_pretrained(model_path)
+                tokenizer = AutoTokenizer.from_pretrained(model_path)
+            
+            # Define the JSON extraction prompt
+            prompt = """Extract all information from the above document and return it as a valid JSON object.
+
+Instructions:
+- The output should be a single JSON object.
+- Keys should be meaningful field names.
+- If multiple similar blocks (like invoice items or line items), return a list of JSON objects under a key.
+- Use strings for all values.
+- Wrap page numbers using: "page_number": "1"
+- Wrap watermarks using: "watermark": "CONFIDENTIAL"
+- Use ☐ and ☑ for checkboxes.
+
+Example:
+{
+  "Name": "John Doe",
+  "Invoice Number": "INV-4567",
+  "Amount Due": "$123.45",
+  "Items": [
+    {"Description": "Widget A", "Price": "$20"},
+    {"Description": "Widget B", "Price": "$30"}
+  ],
+  "page_number": "1",
+  "watermark": "CONFIDENTIAL"
+}"""
+            
+            # Load the image
+            image = Image.open(self.file_path)
+            
+            # Prepare messages for the model
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": [
+                    {"type": "image", "image": f"file://{self.file_path}"},
+                    {"type": "text", "text": prompt},
+                ]},
+            ]
+            
+            # Apply chat template and process
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = processor(text=[text], images=[image], padding=True, return_tensors="pt")
+            inputs = inputs.to(model.device)
+            
+            # Generate JSON response
+            output_ids = model.generate(**inputs, max_new_tokens=15000, do_sample=False)
+            generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
+            
+            json_text = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
+            print(f"json_text: {json_text}")
+            
+            # Try to parse the JSON response with improved parsing
+            def try_parse_json(text):
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    # Try cleaning and reparsing
+                    try:
+                        text = re.sub(r"(\w+):", r'"\1":', text)  # wrap keys
+                        text = text.replace("'", '"')  # replace single quotes
+                        return json.loads(text)
+                    except:
+                        return {"raw_text": text}
+            
+            # Parse the JSON
+            extracted_data = try_parse_json(json_text)
+            
+            # Create the result structure
+            result = {
+                "document": extracted_data,
+                "conversion_metadata": self.metadata,
+                "format": "gpu_structured_json",
+                "gpu_processing_info": {
+                    'ocr_provider': self.ocr_provider,
+                    'processing_mode': 'gpu',
+                    'file_path': self.file_path,
+                    'gpu_processor_available': self.gpu_processor is not None,
+                    'json_extraction_method': 'nanonets_model'
+                }
+            }
+            
+            return result
+                
+        except Exception as e:
+            logger.error(f"Failed to extract JSON with model: {e}")
+            raise
+    
+    def _convert_to_base_json(self) -> Dict[str, Any]:
+        """Fallback to base JSON conversion method."""
+        # Get the base JSON from parent class
+        base_json = super().to_json()
+        
+        # Add GPU-specific metadata
+        base_json['gpu_processing_info'] = {
+            'ocr_provider': self.ocr_provider,
+            'processing_mode': 'gpu',
+            'file_path': self.file_path,
+            'gpu_processor_available': self.gpu_processor is not None,
+            'json_extraction_method': 'fallback_conversion'
+        }
+        
+        # Update the format to indicate GPU processing
+        base_json['format'] = 'gpu_structured_json'
+        
+        return base_json
+    
+    def to_text(self) -> str:
+        """Export as plain text with GPU processing header."""
+        header = f"GPU Processed Document (using {self.ocr_provider} OCR)\n"
+        header += "=" * 50 + "\n\n"
+        return header + self.content
+    
+    def get_processing_stats(self) -> Dict[str, Any]:
+        """Get processing statistics and information.
+        
+        Returns:
+            Dictionary with processing statistics
+        """
+        stats = {
+            'processing_mode': 'gpu',
+            'ocr_provider': self.ocr_provider,
+            'file_path': self.file_path,
+            'content_length': len(self.content),
+            'word_count': len(self.content.split()),
+            'line_count': len(self.content.split('\n')),
+            'gpu_processor_available': self.gpu_processor is not None
+        }
+        
+        # Add metadata if available
+        if self.metadata:
+            stats['metadata'] = self.metadata
+        
+        return stats
 
 
 class GPUProcessor(BaseProcessor):
@@ -47,14 +292,14 @@ class GPUProcessor(BaseProcessor):
         self._ocr_service = OCRServiceFactory.create_service('nanonets')
         return self._ocr_service
     
-    def process(self, file_path: str) -> ConversionResult:
+    def process(self, file_path: str) -> GPUConversionResult:
         """Process image file or PDF with OCR capabilities.
         
         Args:
             file_path: Path to the image file or PDF
             
         Returns:
-            ConversionResult with extracted content
+            GPUConversionResult with extracted content
         """
         try:
             if not os.path.exists(file_path):
@@ -75,14 +320,14 @@ class GPUProcessor(BaseProcessor):
             logger.error(f"Failed to process file {file_path}: {e}")
             raise ConversionError(f"GPU processing failed: {e}")
     
-    def _process_image(self, file_path: str) -> ConversionResult:
+    def _process_image(self, file_path: str) -> GPUConversionResult:
         """Process image file with OCR capabilities.
         
         Args:
             file_path: Path to the image file
             
         Returns:
-            ConversionResult with extracted content
+            GPUConversionResult with extracted content
         """
         # Get OCR service
         ocr_service = self._get_ocr_service()
@@ -98,8 +343,8 @@ class GPUProcessor(BaseProcessor):
             logger.warning("OCR is disabled, returning empty content")
             extracted_text = ""
         
-        # Create result
-        result = ConversionResult(
+        # Create GPU result
+        result = GPUConversionResult(
             content=extracted_text,
             metadata={
                 'file_path': file_path,
@@ -107,20 +352,23 @@ class GPUProcessor(BaseProcessor):
                 'ocr_enabled': self.ocr_enabled,
                 'preserve_layout': self.preserve_layout,
                 'ocr_provider': 'nanonets'
-            }
+            },
+            gpu_processor=self,
+            file_path=file_path,
+            ocr_provider='nanonets'
         )
         
         logger.info(f"Image processing completed. Extracted {len(extracted_text)} characters")
         return result
     
-    def _process_pdf(self, file_path: str) -> ConversionResult:
+    def _process_pdf(self, file_path: str) -> GPUConversionResult:
         """Process PDF file by converting to images and using OCR.
         
         Args:
             file_path: Path to the PDF file
             
         Returns:
-            ConversionResult with extracted content
+            GPUConversionResult with extracted content
         """
         try:
             # Convert PDF to images
@@ -128,7 +376,7 @@ class GPUProcessor(BaseProcessor):
             
             if not image_paths:
                 logger.warning("No pages could be extracted from PDF")
-                return ConversionResult(
+                return GPUConversionResult(
                     content="",
                     metadata={
                         'file_path': file_path,
@@ -137,7 +385,10 @@ class GPUProcessor(BaseProcessor):
                         'preserve_layout': self.preserve_layout,
                         'ocr_provider': 'nanonets',
                         'pages_processed': 0
-                    }
+                    },
+                    gpu_processor=self,
+                    file_path=file_path,
+                    ocr_provider='nanonets'
                 )
             
             # Process each page with OCR
@@ -183,7 +434,7 @@ class GPUProcessor(BaseProcessor):
             combined_text = ''.join(all_texts)
             
             # Create result
-            result = ConversionResult(
+            result = GPUConversionResult(
                 content=combined_text,
                 metadata={
                     'file_path': file_path,
@@ -192,7 +443,10 @@ class GPUProcessor(BaseProcessor):
                     'preserve_layout': self.preserve_layout,
                     'ocr_provider': 'nanonets',
                     'pages_processed': len(image_paths)
-                }
+                },
+                gpu_processor=self,
+                file_path=file_path,
+                ocr_provider='nanonets'
             )
             
             logger.info(f"PDF processing completed. Processed {len(image_paths)} pages, extracted {len(combined_text)} characters")

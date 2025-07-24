@@ -1,6 +1,5 @@
-"""Document processors for different file formats."""
+"""Processors for different file types."""
 
-from .base import BaseProcessor
 from .pdf_processor import PDFProcessor
 from .docx_processor import DOCXProcessor
 from .txt_processor import TXTProcessor
@@ -9,13 +8,12 @@ from .url_processor import URLProcessor
 from .html_processor import HTMLProcessor
 from .pptx_processor import PPTXProcessor
 from .image_processor import ImageProcessor
-from .cloud_processor import CloudProcessor
-from .gpu_processor import GPUProcessor
+from .cloud_processor import CloudProcessor, CloudConversionResult
+from .gpu_processor import GPUProcessor, GPUConversionResult
 
 __all__ = [
-    "BaseProcessor",
-    "PDFProcessor", 
-    "DOCXProcessor",
+    "PDFProcessor",
+    "DOCXProcessor", 
     "TXTProcessor",
     "ExcelProcessor",
     "URLProcessor",
@@ -23,5 +21,7 @@ __all__ = [
     "PPTXProcessor",
     "ImageProcessor",
     "CloudProcessor",
-    "GPUProcessor"
+    "CloudConversionResult",
+    "GPUProcessor",
+    "GPUConversionResult"
 ] 

@@ -45,6 +45,21 @@ class NanonetsOCRService(OCRService):
         self._processor = NanonetsDocumentProcessor()
         logger.info("NanonetsOCRService initialized")
     
+    @property
+    def model(self):
+        """Get the Nanonets model."""
+        return self._processor.model
+    
+    @property
+    def processor(self):
+        """Get the Nanonets processor."""
+        return self._processor.processor
+    
+    @property
+    def tokenizer(self):
+        """Get the Nanonets tokenizer."""
+        return self._processor.tokenizer
+    
     def extract_text(self, image_path: str) -> str:
         """Extract text using Nanonets OCR."""
         try:
