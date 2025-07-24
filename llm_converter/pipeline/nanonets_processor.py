@@ -17,30 +17,57 @@ class NanonetsDocumentProcessor:
         logger.info("Initializing Neural Document Processor with Nanonets OCR...")
         
         # Initialize models
-        self._initialize_models()
+        self._initialize_models(cache_dir)
         
         logger.info("Neural Document Processor initialized successfully")
     
-    def _initialize_models(self):
-        """Initialize Nanonets OCR model."""
+    def _initialize_models(self, cache_dir: Optional[Path] = None):
+        """Initialize Nanonets OCR model from local cache."""
         try:
             from transformers import AutoTokenizer, AutoProcessor, AutoModelForImageTextToText
+            from .model_downloader import ModelDownloader
             
-            model_path = "nanonets/Nanonets-OCR-s"
+            # Get model downloader instance
+            model_downloader = ModelDownloader(cache_dir)
             
-            logger.info(f"Loading Nanonets OCR model from: {model_path}")
+            # Get the path to the locally cached Nanonets model
+            model_path = model_downloader.get_model_path('nanonets-ocr')
             
+            if model_path is None:
+                raise RuntimeError(
+                        "Failed to download Nanonets OCR model. "
+                        "Please ensure you have sufficient disk space and internet connection."
+                    )
+            
+            # The actual model files are in a subdirectory with the same name
+            actual_model_path = model_path / "Nanonets-OCR-ss"
+            
+            if not actual_model_path.exists():
+                raise RuntimeError(
+                    f"Model files not found at expected path: {actual_model_path}"
+                )
+            
+            logger.info(f"Loading Nanonets OCR model from local cache: {actual_model_path}")
+            
+            # Load model from local path
             self.model = AutoModelForImageTextToText.from_pretrained(
-                model_path, 
+                str(actual_model_path), 
                 torch_dtype="auto", 
                 device_map="auto", 
+                local_files_only=True  # Use only local files
             )
             self.model.eval()
             
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.processor = AutoProcessor.from_pretrained(model_path)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                str(actual_model_path),
+                local_files_only=True
+            )
+            self.processor = AutoProcessor.from_pretrained(
+                str(actual_model_path),
+                local_files_only=True
+            )
             
-            logger.info("Nanonets OCR model loaded successfully")
+            logger.info("Nanonets OCR model loaded successfully from local cache")
             
         except ImportError as e:
             logger.error(f"Transformers library not available: {e}")
