@@ -101,7 +101,7 @@ class FileConverter:
             
             # Add GPU processor only if GPU is available
             if should_use_gpu_processor():
-                logger.info("GPU detected - adding GPU processor with Nanonets OCR")
+                logger.info("GPU detected - adding GPU processor with Nanonets OCR (supports: .jpg, .jpeg, .png, .bmp, .tiff, .webp, .gif, .pdf)")
                 gpu_processor = GPUProcessor(preserve_layout=preserve_layout, include_images=include_images, ocr_enabled=self.ocr_enabled)
                 local_processors.append(gpu_processor)
             else:
@@ -237,11 +237,17 @@ class FileConverter:
         Returns:
             Processor that can handle the file, or None if none found
         """
+        # Define GPU-supported formats
+        gpu_supported_formats = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif', '.pdf']
+        
+        # Check file extension
+        _, ext = os.path.splitext(file_path.lower())
+        
         # Check if GPU processor should be used for this file type
-        if should_use_gpu_processor():
+        if should_use_gpu_processor() and ext in gpu_supported_formats:
             for processor in self.processors:
                 if isinstance(processor, GPUProcessor):
-                    logger.info(f"Using GPU processor with Nanonets OCR for {file_path}")
+                    logger.info(f"Using GPU processor with Nanonets OCR for {file_path} (GPU available and format supported)")
                     return processor
         
         # Fallback to normal processor selection
