@@ -13,10 +13,12 @@ from .processors import (
     HTMLProcessor,
     PPTXProcessor,
     ImageProcessor,
-    CloudProcessor
+    CloudProcessor,
+    GPUProcessor,
 )
 from .result import ConversionResult
 from .exceptions import ConversionError, UnsupportedFormatError, FileNotFoundError
+from .utils.gpu_utils import should_use_gpu_processor
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -94,8 +96,16 @@ class FileConverter:
                 HTMLProcessor(preserve_layout=preserve_layout, include_images=include_images),
                 PPTXProcessor(preserve_layout=preserve_layout, include_images=include_images),
                 ImageProcessor(preserve_layout=preserve_layout, include_images=include_images, ocr_enabled=self.ocr_enabled),
-                URLProcessor(preserve_layout=preserve_layout, include_images=include_images)
+                URLProcessor(preserve_layout=preserve_layout, include_images=include_images),
             ]
+            
+            # Add GPU processor only if GPU is available
+            if should_use_gpu_processor():
+                logger.info("GPU detected - adding GPU processor with Nanonets OCR")
+                gpu_processor = GPUProcessor(preserve_layout=preserve_layout, include_images=include_images, ocr_enabled=self.ocr_enabled)
+                local_processors.append(gpu_processor)
+            else:
+                logger.info("No GPU detected - using CPU-based processors only")
             
             self.processors.extend(local_processors)
     
@@ -227,6 +237,14 @@ class FileConverter:
         Returns:
             Processor that can handle the file, or None if none found
         """
+        # Check if GPU processor should be used for this file type
+        if should_use_gpu_processor():
+            for processor in self.processors:
+                if isinstance(processor, GPUProcessor):
+                    logger.info(f"Using GPU processor with Nanonets OCR for {file_path}")
+                    return processor
+        
+        # Fallback to normal processor selection
         for processor in self.processors:
             if processor.can_process(file_path):
                 return processor
@@ -262,5 +280,9 @@ class FileConverter:
                 elif isinstance(processor, CloudProcessor):
                     # Cloud processor supports many formats, but we don't want duplicates
                     pass
+                elif isinstance(processor, GPUProcessor):
+                    # GPU processor supports all image formats
+                    #bmp, jpeg, jpeg, png, tiff, webp
+                    formats.extend(['.pdf','.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif'])
         
         return list(set(formats))  # Remove duplicates 

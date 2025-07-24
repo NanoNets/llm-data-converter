@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 import requests
 from tqdm import tqdm
+from ..utils.gpu_utils import is_gpu_available, get_gpu_info
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,14 @@ class ModelDownloader:
         "revision": "v2.2.0",
         "model_path": "model_artifacts/tableformer",
         "cache_folder": "tableformer"
+    }
+    
+    # Nanonets OCR model configuration
+    NANONETS_OCR_MODEL = {
+        "s3_url": f"{S3_BASE_URL}/Nanonets-OCR-s.tar.gz",
+        "repo_id": "nanonets/Nanonets-OCR-s",
+        "revision": "main",
+        "cache_folder": "nanonets-ocr",
     }
     
     # Note: EasyOCR downloads its own models automatically, no need for custom model
@@ -61,10 +70,22 @@ class ModelDownloader:
         """
         logger.info("Downloading pre-trained models...")
         
+        # Auto-detect GPU for Nanonets model
+        gpu_available = is_gpu_available()
+        print("gpu_available", gpu_available)
+        if gpu_available:
+            logger.info("GPU detected - including Nanonets OCR model")
+        else:
+            logger.info("No GPU detected - skipping Nanonets OCR model (CPU-only mode)")
+        
         models_to_download = [
             ("Layout Model", self.LAYOUT_MODEL),
             ("Table Structure Model", self.TABLE_MODEL)
         ]
+        
+        # Add Nanonets OCR model only if GPU is available
+        if gpu_available:
+            models_to_download.append(("Nanonets OCR Model", self.NANONETS_OCR_MODEL))
         
         for model_name, model_config in models_to_download:
             logger.info(f"Downloading {model_name}...")
@@ -180,19 +201,20 @@ class ModelDownloader:
             # Don't raise for authentication errors - allow fallback processing
             if "401" not in str(e) and "Unauthorized" not in str(e):
                 raise
-    
+
     def get_model_path(self, model_type: str) -> Optional[Path]:
         """Get the path to a specific model.
         
         Args:
-            model_type: Type of model ('layout', 'table')
+            model_type: Type of model ('layout', 'table', 'nanonets-ocr')
             
         Returns:
             Path to the model directory, or None if not found
         """
         model_mapping = {
             'layout': self.LAYOUT_MODEL["cache_folder"],
-            'table': self.TABLE_MODEL["cache_folder"]
+            'table': self.TABLE_MODEL["cache_folder"],
+            'nanonets-ocr': self.NANONETS_OCR_MODEL["cache_folder"]
         }
         
         if model_type not in model_mapping:
@@ -211,12 +233,17 @@ class ModelDownloader:
         """Check if all required models are cached.
         
         Returns:
-            True if all models are cached, False otherwise
+            True if all required models are cached, False otherwise
         """
         layout_path = self.get_model_path('layout')
         table_path = self.get_model_path('table')
         
-        return layout_path is not None and table_path is not None
+        # Only check for Nanonets model if GPU is available
+        if is_gpu_available():
+            nanonets_path = self.get_model_path('nanonets-ocr')
+            return layout_path is not None and table_path is not None and nanonets_path is not None
+        else:
+            return layout_path is not None and table_path is not None
     
     def _download_from_s3(self, s3_url: str, local_dir: Path, force: bool, progress: bool):
         """Download model from Nanonets S3.
@@ -273,14 +300,32 @@ class ModelDownloader:
         """
         info = {
             'cache_dir': str(self.cache_dir),
+            'gpu_info': get_gpu_info(),
             'models': {}
         }
         
+        # Always check layout and table models
         for model_type in ['layout', 'table']:
             path = self.get_model_path(model_type)
             info['models'][model_type] = {
                 'cached': path is not None,
                 'path': str(path) if path else None
+            }
+        
+        # Only check Nanonets model if GPU is available
+        if is_gpu_available():
+            path = self.get_model_path('nanonets-ocr')
+            info['models']['nanonets-ocr'] = {
+                'cached': path is not None,
+                'path': str(path) if path else None,
+                'gpu_required': True
+            }
+        else:
+            info['models']['nanonets-ocr'] = {
+                'cached': False,
+                'path': None,
+                'gpu_required': True,
+                'skipped': 'No GPU available'
             }
         
         return info 

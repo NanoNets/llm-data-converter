@@ -36,6 +36,74 @@ class OCRService(ABC):
         pass
 
 
+class NanonetsOCRService(OCRService):
+    """Nanonets OCR implementation using NanonetsDocumentProcessor."""
+    
+    def __init__(self):
+        """Initialize the service."""
+        from .nanonets_processor import NanonetsDocumentProcessor
+        self._processor = NanonetsDocumentProcessor()
+        logger.info("NanonetsOCRService initialized")
+    
+    def extract_text(self, image_path: str) -> str:
+        """Extract text using Nanonets OCR."""
+        try:
+            # Validate image file
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            # Check if file is readable
+            try:
+                from PIL import Image
+                with Image.open(image_path) as img:
+                    logger.info(f"Image loaded successfully: {img.size} {img.mode}")
+            except Exception as e:
+                logger.error(f"Failed to load image: {e}")
+                return ""
+            
+            try:
+                text = self._processor.extract_text(image_path)
+                logger.info(f"Extracted text length: {len(text)}")
+                return text.strip()
+            except Exception as e:
+                logger.error(f"Nanonets OCR extraction failed: {e}")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"Nanonets OCR extraction failed: {e}")
+            return ""
+    
+    def extract_text_with_layout(self, image_path: str) -> str:
+        """Extract text with layout awareness using Nanonets OCR."""
+        try:
+            # Validate image file
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            # Check if file is readable
+            try:
+                from PIL import Image
+                with Image.open(image_path) as img:
+                    logger.info(f"Image loaded successfully: {img.size} {img.mode}")
+            except Exception as e:
+                logger.error(f"Failed to load image: {e}")
+                return ""
+            
+            try:
+                text = self._processor.extract_text_with_layout(image_path)
+                logger.info(f"Layout-aware extracted text length: {len(text)}")
+                return text.strip()
+            except Exception as e:
+                logger.error(f"Nanonets OCR layout-aware extraction failed: {e}")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"Nanonets OCR layout-aware extraction failed: {e}")
+            return ""
+
+
 class NeuralOCRService(OCRService):
     """Neural OCR implementation using docling's pre-trained models."""
     
@@ -120,9 +188,11 @@ class OCRServiceFactory:
         from llm_converter.config import InternalConfig
         
         if provider is None:
-            provider = getattr(InternalConfig, 'ocr_provider', 'neural')
+            provider = getattr(InternalConfig, 'ocr_provider', 'nanonets')
         
-        if provider.lower() == 'neural':
+        if provider.lower() == 'nanonets':
+            return NanonetsOCRService()
+        elif provider.lower() == 'neural':
             return NeuralOCRService()
         else:
             raise ValueError(f"Unsupported OCR provider: {provider}")
@@ -134,4 +204,4 @@ class OCRServiceFactory:
         Returns:
             List of available provider names
         """
-        return ['neural']  # Only neural OCR is supported 
+        return ['nanonets', 'neural'] 

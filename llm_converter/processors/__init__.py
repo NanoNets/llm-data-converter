@@ -10,6 +10,7 @@ from .html_processor import HTMLProcessor
 from .pptx_processor import PPTXProcessor
 from .image_processor import ImageProcessor
 from .cloud_processor import CloudProcessor
+from .gpu_processor import GPUProcessor
 
 __all__ = [
     "BaseProcessor",
@@ -21,5 +22,6 @@ __all__ = [
     "HTMLProcessor",
     "PPTXProcessor",
     "ImageProcessor",
-    "CloudProcessor"
+    "CloudProcessor",
+    "GPUProcessor"
 ] 
