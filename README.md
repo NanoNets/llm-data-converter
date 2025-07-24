@@ -67,7 +67,25 @@ result = converter.convert("document.pdf").to_markdown()
 print(result)
 ```
 
+**CPU/GPU Processing Preferences:**
+```python
+from llm_converter import FileConverter
 
+# Force CPU-only processing (useful for servers without GPU)
+converter = FileConverter(cpu_preference=True)
+result = converter.convert("document.pdf").to_markdown()
+
+# Force GPU processing (will raise error if GPU not available)
+converter = FileConverter(gpu_preference=True)
+result = converter.convert("document.pdf").to_markdown()
+
+# Auto-detect (default) - uses GPU if available, falls back to CPU
+converter = FileConverter()  # No preference specified
+result = converter.convert("document.pdf").to_markdown()
+
+# Check current processing mode
+print(f"Processing mode: {converter.get_processing_mode()}")  # cpu_forced, gpu_forced, gpu_auto, cpu_auto, or cloud
+```
 
 ## Features
 
@@ -77,6 +95,10 @@ print(result)
 - **Local Processing**: Process documents locally without external dependencies
 - **Cloud Processing**: Fast, accurate processing with Nanonets cloud API
 - **Layout Preservation**: Maintain document structure and formatting
+- **CPU/GPU Processing Modes**: Flexible processing options:
+  - **Auto-detect**: Automatically uses GPU if available, falls back to CPU
+  - **CPU-only**: Force CPU processing (useful for servers without GPU)
+  - **GPU-only**: Force GPU processing (requires CUDA-compatible GPU)
 - **Intelligent Document Processing**: Advanced document understanding and conversion powered by pre-trained models:
   - **Layout Detection**: Intelligent models for document structure understanding
   - **Text Recognition**: High-accuracy text extraction with confidence scoring
@@ -183,6 +205,12 @@ llm-converter document.pdf --cloud-mode --model openapi --output json
 # Save output to file
 llm-converter document.pdf --output-file output.md
 
+# Force CPU-only processing
+llm-converter document.pdf --cpu-only
+
+# Force GPU processing (will error if GPU not available)
+llm-converter document.pdf --gpu-only
+
 # For image input
 llm-converter image.png 
 
@@ -223,11 +251,23 @@ llm-converter document.pdf --cloud-mode --output json  # env var NANONETS_API_KE
 
 Main class for converting documents to LLM-ready formats.
 
+#### Constructor Parameters
+
+- `preserve_layout: bool = True`: Whether to preserve document layout
+- `include_images: bool = True`: Whether to include images in output
+- `ocr_enabled: bool = True`: Whether to enable OCR for image and PDF processing
+- `cloud_mode: bool = False`: Whether to use cloud processing via Nanonets API
+- `api_key: Optional[str] = None`: API key for cloud mode (get from https://app.nanonets.com/#/keys)
+- `model: Optional[str] = None`: Model to use for cloud processing (gemini, openapi) - only for cloud mode
+- `cpu_preference: bool = False`: Force CPU-only processing (overrides GPU preference)
+- `gpu_preference: bool = False`: Force GPU processing (will raise error if GPU not available)
+
 #### Methods
 
 - `convert(file_path: str) -> ConversionResult`: Convert a file to internal format
 - `convert_url(url: str) -> ConversionResult`: Convert a URL page contents to internal format
 - `convert_text(text: str) -> ConversionResult`: Convert plain text to internal format
+- `get_processing_mode() -> str`: Get current processing mode (cpu_forced, gpu_forced, gpu_auto, cpu_auto, cloud)
 
 ### CloudFileConverter
 
