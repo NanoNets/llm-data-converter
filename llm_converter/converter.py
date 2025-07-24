@@ -281,8 +281,7 @@ class FileConverter:
                     # Cloud processor supports many formats, but we don't want duplicates
                     pass
                 elif isinstance(processor, GPUProcessor):
-                    # GPU processor supports all image formats
-                    #bmp, jpeg, jpeg, png, tiff, webp
-                    formats.extend(['.pdf','.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif'])
+                    # GPU processor supports all image formats and PDFs
+                    formats.extend(['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif', '.pdf'])
         
         return list(set(formats))  # Remove duplicates 
