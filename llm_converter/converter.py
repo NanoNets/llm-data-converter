@@ -50,8 +50,6 @@ class FileConverter:
         
         Note:
             - Cloud mode is the default unless cpu_preference or gpu_preference is specified
-            - Without API key, cloud mode uses rate-limited free tier
-            - For unlimited access, provide an API key from https://app.nanonets.com/#/keys
         """
         self.preserve_layout = preserve_layout
         self.include_images = include_images
@@ -99,11 +97,11 @@ class FileConverter:
             )
             self.processors.append(cloud_processor)
             
-            if self.api_key:
-                logger.info("Cloud processing enabled with API key - unlimited access")
-            else:
-                logger.info("Cloud processing enabled without API key - using rate-limited free tier")
-                logger.warning("For unlimited access, provide an API key from https://app.nanonets.com/#/keys")
+            # if self.api_key:
+            #     logger.info("Cloud processing enabled with API key - unlimited access")
+            # else:
+            #     logger.info("Cloud processing enabled without API key - using rate-limited free tier")
+            #     logger.warning("For unlimited access, provide an API key from https://app.nanonets.com/#/keys")
         else:
             # Local mode setup
             logger.info("Local processing mode enabled")

@@ -43,7 +43,9 @@ class CloudConversionResult(ConversionResult):
         
         try:
             # Prepare headers - API key is optional
-            headers = {}
+            headers = {
+                'accept': 'application/json'
+            }
             if self.cloud_processor.api_key:
                 headers['Authorization'] = f'Bearer {self.cloud_processor.api_key}'
             
@@ -53,9 +55,12 @@ class CloudConversionResult(ConversionResult):
                     'file': (os.path.basename(self.file_path), file, self.cloud_processor._get_content_type(self.file_path))
                 }
                 
-                data = {
-                    'output_type': output_type
-                }
+                data = {}
+                
+                # Add format parameter for JSON output
+                if output_type in ["flat-json", "specified-fields", "specified-json"]:
+                    data['format'] = 'json'
+                # For markdown, html, csv - no format parameter needed (defaults to markdown)
                 
                 # Add model_type if specified
                 if self.cloud_processor.model_type:
@@ -168,11 +173,11 @@ class CloudConversionResult(ConversionResult):
                 }
             
             else:
-                # Standard JSON extraction
+                # Standard JSON extraction - use json_data field directly
                 json_content = self._get_cloud_output("flat-json")
-                parsed_content = json.loads(json_content)
+                # The API returns json_data field directly, no need to parse
                 return {
-                    "document": parsed_content,
+                    "document": json_content,
                     "conversion_metadata": self.metadata,
                     "format": "cloud_flat_json"
                 }
@@ -233,7 +238,7 @@ class CloudProcessor(BaseProcessor):
         self.model_type = model_type
         self.specified_fields = specified_fields
         self.json_schema = json_schema
-        self.api_url = "https://extraction-api.nanonets.com/extract"
+        self.api_url = "https://data-extractor.nanonets.com/ocr"
         
         # Don't validate output_type during initialization - it will be validated during processing
         # This prevents warnings during FileConverter initialization
@@ -291,12 +296,24 @@ class CloudProcessor(BaseProcessor):
     def _extract_content_from_response(self, response_data: Dict[str, Any]) -> str:
         """Extract content from API response."""
         try:
-            # API always returns content in the 'content' field
-            if 'content' in response_data:
+            # Check for success first
+            if not response_data.get('success', True):
+                error_msg = response_data.get('message', 'API request failed')
+                raise ConversionError(f"API request failed: {error_msg}")
+            
+            # API returns different fields based on format
+            if 'json_data' in response_data and response_data['json_data'] is not None:
+                # For JSON requests, return the json_data directly
+                return response_data['json_data']
+            elif 'markdown' in response_data and response_data['markdown']:
+                return response_data['markdown']
+            elif 'text' in response_data and response_data['text']:
+                return response_data['text']
+            elif 'content' in response_data:
                 return response_data['content']
             
             # Fallback: return whole response as JSON if no content field
-            logger.warning("No 'content' field found in API response, returning full response")
+            logger.warning("No content fields found in API response, returning full response")
             return json.dumps(response_data, indent=2)
             
         except Exception as e:
