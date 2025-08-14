@@ -1,3 +1,14 @@
+# This project has been moved to DocStrange
+
+## Github 
+https://github.com/NanoNets/docstrange
+
+## Demo
+https://docstrange.nanonets.com/
+
+***
+
+
 # LLM Data Converter
 
 [![PyPI version](https://badge.fury.io/py/llm-data-converter.svg?v=2)](https://badge.fury.io/py/llm-data-converter)
